@@ -1,4 +1,7 @@
-"""Script to play RL agent with RSL-RL."""
+"""
+Script to play RL agent with RSL-RL.
+uv run play Mjlab-Velocity-Flat-Unitree-G1 --wandb-run-path 2025-12-03_08-39-38
+"""
 
 import os
 import sys
@@ -98,7 +101,13 @@ def run_play(task_id: str, cfg: PlayConfig):
             "or provide `wandb_run_path` so the motion artifact can be resolved."
           )
         if cfg.wandb_run_path is not None:
-          wandb_run = api.run(str(cfg.wandb_run_path))
+          from mjlab.utils.os import construct_wandb_run_path
+
+          # Construct full wandb path if needed
+          full_run_path = construct_wandb_run_path(
+            str(cfg.wandb_run_path), project=agent_cfg.wandb_project
+          )
+          wandb_run = api.run(full_run_path)
           art = next(
             (a for a in wandb_run.used_artifacts() if a.type == "motions"), None
           )
@@ -121,7 +130,7 @@ def run_play(task_id: str, cfg: PlayConfig):
           "`wandb_run_path` is required when `checkpoint_file` is not provided."
         )
       resume_path, was_cached = get_wandb_checkpoint_path(
-        log_root_path, Path(cfg.wandb_run_path)
+        log_root_path, Path(cfg.wandb_run_path), project=agent_cfg.wandb_project
       )
       # Extract run_id and checkpoint name from path for display.
       run_id = resume_path.parent.name

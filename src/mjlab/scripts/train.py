@@ -110,7 +110,7 @@ def run_train(task_id: str, cfg: TrainConfig, log_dir: Path) -> None:
     if cfg.wandb_run_path is not None:
       # Load checkpoint from W&B.
       resume_path, was_cached = get_wandb_checkpoint_path(
-        log_root_path, Path(cfg.wandb_run_path)
+        log_root_path, Path(cfg.wandb_run_path), project=cfg.agent.wandb_project
       )
       if rank == 0:
         run_id = resume_path.parent.name
