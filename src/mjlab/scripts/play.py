@@ -1,6 +1,7 @@
 """
 Script to play RL agent with RSL-RL.
 uv run play Mjlab-Velocity-Flat-Unitree-G1 --wandb-run-path 2025-12-03_08-39-38
+uv run play Mjlab-Tracking-Flat-Unitree-G1 --wandb-run-path rebel-joonhyung-lee-rebellions/mjlab/ezj3yzxt
 """
 
 import os

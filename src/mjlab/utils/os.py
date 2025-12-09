@@ -131,8 +131,15 @@ def construct_wandb_run_path(
         # Try to get from wandb API
         api = wandb.Api()
         try:
-          entity = api.viewer().username
+          # `viewer` is a property on newer wandb versions and a callable on older ones.
+          viewer = api.viewer() if callable(api.viewer) else api.viewer
+          entity = getattr(viewer, "username", None) or getattr(viewer, "login", None)
         except Exception:
+          raise ValueError(
+            "Could not determine wandb entity. Please set WANDB_ENTITY environment "
+            f"variable or provide full path as 'entity/project/{run_id}'"
+          )
+        if entity is None:
           raise ValueError(
             "Could not determine wandb entity. Please set WANDB_ENTITY environment "
             f"variable or provide full path as 'entity/project/{run_id}'"
