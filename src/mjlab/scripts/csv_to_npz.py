@@ -1,3 +1,13 @@
+"""
+MUJOCO_GL=egl uv run src/mjlab/scripts/csv_to_npz.py \
+  --input-file ./motion_dataset/run1_subject2.csv \
+  --output-name run1 \
+  --input-fps 30 \
+  --output-fps 50 \
+  --render  # Optional: generates preview video
+
+uv run train Mjlab-Tracking-Flat-Unitree-G1 --registry-name rebel-joonhyung-lee-rebellions/csv_to_npz/run1 --env.scene.num-envs 4096
+"""
 from typing import Any
 
 import numpy as np
