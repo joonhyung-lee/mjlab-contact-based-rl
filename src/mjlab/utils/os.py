@@ -1,3 +1,5 @@
+import os
+import os
 import re
 from pathlib import Path
 from typing import Any, Dict, Union
@@ -95,65 +97,81 @@ def construct_wandb_run_path(
   """Construct full wandb run path from partial or full path.
 
   Args:
-    run_path: Wandb run path. Can be:
-      - Full path: "entity/project/run_id"
-      - Just run_id: "run_id" (requires project to be provided)
-    project: Wandb project name. Required if run_path is just a run_id.
-    entity: Wandb entity name. If None, will try to get from wandb API or environment.
+    run_path: Wandb run path. Accepts "entity/project/run_id", "project/run_id",
+      or just "run_id".
+    project: Optional wandb project name. Used when not embedded and falls back to
+      WANDB_PROJECT or "mjlab".
+    entity: Optional wandb entity name. Falls back to WANDB_ENTITY or wandb API.
 
   Returns:
     Full wandb run path in format "entity/project/run_id"
   """
-  import os
   import wandb
 
-  path_parts = run_path.split("/")
+  path_str = run_path.strip().strip("/")
+  if not path_str:
+    raise ValueError("`wandb_run_path` cannot be empty.")
 
-  # Check if we have a full path (entity/project/run_id) or just run_id
-  if len(path_parts) >= 3:
-    # Full path provided: entity/project/run_id
-    return run_path
-  elif len(path_parts) == 1:
-    # Just run_id provided, need to construct full path
-    run_id = path_parts[0]
-    if project is None:
+  segments = [seg for seg in path_str.split("/") if seg]
+  if len(segments) >= 3:
+    entity, project_name, run_id = segments[-3:]
+    return "/".join((entity, project_name, run_id))
+
+  if len(segments) == 2:
+    project_name, run_id = segments
+  else:
+    run_id = segments[0]
+    project_name = project or os.environ.get("WANDB_PROJECT")
+  if project_name is None:
+    project_name = "mjlab"
+
+  resolved_entity = entity or os.environ.get("WANDB_ENTITY")
+  if resolved_entity is None:
+    api = wandb.Api()
+    try:
+      viewer = api.viewer() if callable(api.viewer) else api.viewer
+      resolved_entity = getattr(viewer, "username", None) or getattr(viewer, "login", None)
+    except Exception as exc:
       raise ValueError(
-        f"`wandb_run_path` '{run_path}' appears to be just a run_id. "
-        "Please provide either:\n"
-        "  1. Full path: 'entity/project/run_id', or\n"
-        "  2. Just run_id with project name via agent config"
+        "Could not determine wandb entity. Please set WANDB_ENTITY or provide a full "
+        f"run path (entity/project/{run_id})."
+      ) from exc
+    if resolved_entity is None:
+      raise ValueError(
+        "Could not determine wandb entity. Please set WANDB_ENTITY or provide a full "
+        f"run path (entity/project/{run_id})."
       )
 
-    # Get entity from environment variable or wandb API
-    if entity is None:
-      entity = os.environ.get("WANDB_ENTITY")
-      if entity is None:
-        # Try to get from wandb API
-        api = wandb.Api()
-        try:
-          # `viewer` is a property on newer wandb versions and a callable on older ones.
-          viewer = api.viewer() if callable(api.viewer) else api.viewer
-          entity = getattr(viewer, "username", None) or getattr(viewer, "login", None)
-        except Exception:
-          raise ValueError(
-            "Could not determine wandb entity. Please set WANDB_ENTITY environment "
-            f"variable or provide full path as 'entity/project/{run_id}'"
-          )
-        if entity is None:
-          raise ValueError(
-            "Could not determine wandb entity. Please set WANDB_ENTITY environment "
-            f"variable or provide full path as 'entity/project/{run_id}'"
-          )
+  return f"{resolved_entity}/{project_name}/{run_id}"
 
-    return f"{entity}/{project}/{run_id}"
+
+def resolve_wandb_run_path(run_path: Union[str, Path]) -> str:
+  """Return canonical wandb run path using env fallbacks."""
+  path_str = str(run_path).strip().strip("/")
+  if not path_str:
+    raise ValueError("`wandb_run_path` cannot be empty.")
+
+  segments = [seg for seg in path_str.split("/") if seg]
+  if len(segments) >= 3:
+    return "/".join(segments[-3:])
+
+  project = os.environ.get("WANDB_PROJECT", "mjlab")
+  entity = os.environ.get("WANDB_ENTITY")
+  if len(segments) == 2:
+    project, run_id = segments
   else:
-    # Partial path (e.g., "project/run_id")
+    run_id = segments[0]
+  if entity is None:
+    import wandb
+
+    api = wandb.Api()
+    viewer = api.viewer() if callable(api.viewer) else api.viewer
+    entity = getattr(viewer, "username", None) or getattr(viewer, "login", None)
+  if entity is None:
     raise ValueError(
-      f"`wandb_run_path` '{run_path}' format is unclear. "
-      "Please provide either:\n"
-      "  1. Full path: 'entity/project/run_id', or\n"
-      "  2. Just run_id: 'run_id' (requires project in config)"
+      "Could not determine wandb entity; set WANDB_ENTITY or provide entity/project/run id."
     )
+  return f"{entity}/{project}/{run_id}"
 
 
 def get_wandb_checkpoint_path(
@@ -163,11 +181,10 @@ def get_wandb_checkpoint_path(
 
   Args:
     log_path: Local log directory path.
-    run_path: Wandb run path. Can be:
-      - Full path: "entity/project/run_id"
-      - Just run_id: "run_id" (requires project and entity to be provided)
-    project: Wandb project name. Required if run_path is just a run_id.
-    entity: Wandb entity name. If None, will try to get from wandb API or environment.
+    run_path: Wandb run path. Accepts "entity/project/run_id", "project/run_id",
+      or just "run_id" when defaults are available.
+    project: Optional wandb project name. Falls back to WANDB_PROJECT env var or "mjlab".
+    entity: Optional wandb entity. Falls back to WANDB_ENTITY env var or wandb.Api().viewer.
 
   Returns:
     Tuple of (checkpoint_path, was_cached)
@@ -206,8 +223,8 @@ def get_wandb_checkpoint_path(
     return checkpoint_path, True
 
   full_run_path = construct_wandb_run_path(str(run_path), project, entity)
-
-  download_dir = log_path / "wandb_checkpoints" / run_id
+  resolved_run_id = full_run_path.split("/")[-1]
+  download_dir = log_path / "wandb_checkpoints" / resolved_run_id
 
   # Query wandb API to find the latest checkpoint.
   api = wandb.Api()
